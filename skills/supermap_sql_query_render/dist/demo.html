@@ -1,31 +1,245 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="zh-CN">
 <head>
-    <title>Demo</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
-    <script src='https://api.mapbox.com/mapbox-gl-js/v1.15.0/mapbox-gl.js'></script>
-    <link href='https://api.mapbox.com/mapbox-gl-js/v1.15.0/mapbox-gl.css' rel='stylesheet' />
+  <meta charset="utf-8" />
+  <title>SuperMap iServer REST Data - SQL 查询并上图（默认中国底图）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Mapbox GL JS v1 -->
+  <link href="https://cdn.jsdelivr.net/npm/mapbox-gl@1.13.3/dist/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/mapbox-gl@1.13.3/dist/mapbox-gl.js"></script>
+
+  <!-- SuperMap iClient for MapboxGL -->
+  <script src="https://iclient.supermap.io/dist/iclient-mapboxgl.min.js"></script>
+
+  <style>
+    body { margin: 0; font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; }
+    #map { position: absolute; inset: 0; }
+    #panel {
+      position: absolute; z-index: 10; top: 12px; left: 12px;
+      width: 480px; background: rgba(255,255,255,0.96); padding: 12px;
+      border-radius: 10px; box-shadow: 0 2px 14px rgba(0,0,0,0.18);
+    }
+    .row { margin-top: 8px; }
+    label { display:block; font-size: 12px; color: #374151; margin-bottom: 4px; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; }
+    textarea { height: 64px; resize: vertical; }
+    button { padding: 6px 10px; cursor: pointer; }
+    #status { margin-top: 8px; font-size: 12px; color: #111827; white-space: pre-wrap; }
+    code { background: #f3f4f6; padding: 1px 4px; border-radius: 4px; }
+    .hint { font-size: 12px; color:#6b7280; line-height:1.4; margin-top: 6px; }
+  </style>
 </head>
 <body>
-    <div id='map' style='width: 100%; height: 100vh;'></div>
-    <script>
-        mapboxgl.accessToken = 'YOUR_MAPBOX_ACCESS_TOKEN';
-        const map = new mapboxgl.Map({
-            container: 'map',
-            style: 'mapbox://styles/mapbox/streets-v11',
-            center: [0, 0],
-            zoom: 2,
-        });
+  <div id="panel">
+    <div style="font-weight:700;">SuperMap iServer REST Data - SQL 查询并上图</div>
+    <div class="hint">
+      默认底图：<code>https://iclient.supermap.io/iserver/services/map-china/rest/maps/China/zxyTileImage.png?z={z}&amp;x={x}&amp;y={y}</code>
+    </div>
 
-        // Initialize your Mapbox GL FeatureService here with the right parameters.
-        const params = {
-            dataServiceUrl: '',
-            dataSourceName: '',
-            datasetName: '',
-            attributeFilter: '1=1',
-        };
-        // Replace this comment with your Mapbox GL FeatureService logic.
-    </script>
+    <div class="row">
+      <label>dataServiceUrl（必须到 /rest/data）</label>
+      <input id="dataServiceUrl" value="" placeholder="https://xxx/iserver/services/data-xxx/rest/data" />
+    </div>
+
+    <div class="row" style="display:flex; gap:8px;">
+      <div style="flex:1;">
+        <label>datasourceName</label>
+        <input id="datasourceName" value="" placeholder="World" />
+      </div>
+      <div style="flex:1;">
+        <label>datasetName</label>
+        <input id="datasetName" value="" placeholder="Countries" />
+      </div>
+    </div>
+
+    <div class="row">
+      <label>attributeFilter（SQL 条件，空则默认 1=1）</label>
+      <textarea id="attributeFilter" placeholder="SMID = 247">1=1</textarea>
+    </div>
+
+    <div class="row" style="display:flex; gap:8px; align-items:center;">
+      <button id="btnQuery">查询并上图</button>
+      <button id="btnClear">清除图层</button>
+    </div>
+
+    <div class="hint">
+      规则：<code>datasetNames = datasource:dataset</code>；<code>queryParameter.name = dataset@datasource</code>。
+      <br/>失败常见原因：CORS、数据源/数据集名不对、SQL 字段不存在。
+    </div>
+
+    <div id="status"></div>
+  </div>
+
+  <div id="map"></div>
+
+  <script>
+    // ---- Default base map (SuperMap China ZXY tiles) ----
+    const CHINA_ZXY = "https://iclient.supermap.io/iserver/services/map-china/rest/maps/China/zxyTileImage.png?z={z}&x={x}&y={y}";
+
+    // Minimal raster style using SuperMap tiles, so no Mapbox token needed.
+    const RASTER_STYLE = {
+      version: 8,
+      sources: {
+        china: {
+          type: "raster",
+          tiles: [CHINA_ZXY],
+          tileSize: 256
+        }
+      },
+      layers: [
+        { id: "background", type: "background", paint: { "background-color": "#f8fafc" } },
+        { id: "china-tiles", type: "raster", source: "china", paint: { "raster-opacity": 1 } }
+      ]
+    };
+
+    const map = new mapboxgl.Map({
+      container: "map",
+      style: RASTER_STYLE,
+      center: [104.0, 35.0],
+      zoom: 3
+    });
+
+    const sourceId = "sm-sql-result";
+    const layerFill = "sm-sql-fill";
+    const layerLine = "sm-sql-line";
+    const layerCircle = "sm-sql-circle";
+
+    function setStatus(msg) {
+      document.getElementById("status").textContent = msg;
+    }
+
+    function normalizeDataUrl(u) {
+      let s = (u || "").trim();
+      if (!s) return s;
+      while (s.endsWith("/")) s = s.slice(0, -1);
+      const idx = s.indexOf("/rest/data");
+      if (idx !== -1) return s.slice(0, idx + "/rest/data".length);
+      return s;
+    }
+
+    function clearResult() {
+      [layerFill, layerLine, layerCircle].forEach(id => {
+        if (map.getLayer(id)) map.removeLayer(id);
+      });
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
+      setStatus("已清除结果图层。");
+    }
+
+    function addResult(featureCollection) {
+      clearResult();
+
+      map.addSource(sourceId, { type: "geojson", data: featureCollection });
+
+      map.addLayer({
+        id: layerFill,
+        type: "fill",
+        source: sourceId,
+        filter: ["any",
+          ["==", ["geometry-type"], "Polygon"],
+          ["==", ["geometry-type"], "MultiPolygon"]
+        ],
+        paint: { "fill-color": "#3b82f6", "fill-opacity": 0.35 }
+      });
+
+      map.addLayer({
+        id: layerLine,
+        type: "line",
+        source: sourceId,
+        filter: ["any",
+          ["==", ["geometry-type"], "LineString"],
+          ["==", ["geometry-type"], "MultiLineString"],
+          ["==", ["geometry-type"], "Polygon"],
+          ["==", ["geometry-type"], "MultiPolygon"]
+        ],
+        paint: { "line-color": "#111827", "line-width": 2 }
+      });
+
+      map.addLayer({
+        id: layerCircle,
+        type: "circle",
+        source: sourceId,
+        filter: ["any",
+          ["==", ["geometry-type"], "Point"],
+          ["==", ["geometry-type"], "MultiPoint"]
+        ],
+        paint: {
+          "circle-radius": 6,
+          "circle-color": "#ef4444",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1
+        }
+      });
+
+      // Fit bounds best-effort
+      try {
+        const coords = [];
+        const collect = (c) => Array.isArray(c[0]) ? c.forEach(collect) : coords.push(c);
+        (featureCollection.features || []).forEach(f => f && f.geometry && collect(f.geometry.coordinates));
+        if (coords.length) {
+          let minX=coords[0][0], minY=coords[0][1], maxX=coords[0][0], maxY=coords[0][1];
+          coords.forEach(([x,y]) => { minX=Math.min(minX,x); minY=Math.min(minY,y); maxX=Math.max(maxX,x); maxY=Math.max(maxY,y); });
+          map.fitBounds([[minX,minY],[maxX,maxY]], { padding: 40, maxZoom: 12 });
+        }
+      } catch (e) {}
+    }
+
+    function runQuery() {
+      const dataServiceUrl = normalizeDataUrl(document.getElementById("dataServiceUrl").value);
+      const datasourceName = document.getElementById("datasourceName").value.trim();
+      const datasetName = document.getElementById("datasetName").value.trim();
+      let attributeFilter = document.getElementById("attributeFilter").value.trim();
+
+      if (!dataServiceUrl) { setStatus("dataServiceUrl 不能为空。"); return; }
+      if (!/\/rest\/data$/.test(dataServiceUrl)) {
+        setStatus("dataServiceUrl 必须指向 iServer Data 服务根路径并以 /rest/data 结尾。\n当前: " + dataServiceUrl);
+        return;
+      }
+      if (!datasourceName || !datasetName) {
+        setStatus("datasourceName 与 datasetName 不能为空。");
+        return;
+      }
+      if (!attributeFilter) attributeFilter = "1=1";
+
+      const datasetNames = [datasourceName + ":" + datasetName];
+      const qpName = datasetName + "@" + datasourceName;
+
+      setStatus(
+        "查询中...\n" +
+        "dataServiceUrl=" + dataServiceUrl + "\n" +
+        "datasetNames=" + JSON.stringify(datasetNames) + "\n" +
+        "queryParameter.name=" + qpName + "\n" +
+        "attributeFilter=" + attributeFilter
+      );
+
+      const sqlParam = new SuperMap.GetFeaturesBySQLParameters({
+        queryParameter: { name: qpName, attributeFilter },
+        datasetNames
+      });
+
+      new mapboxgl.supermap.FeatureService(dataServiceUrl)
+        .getFeaturesBySQL(sqlParam, function(serviceResult) {
+          const fc = serviceResult && serviceResult.result && serviceResult.result.features;
+          if (!fc || !fc.features) {
+            setStatus(
+              "查询失败或无结果。\n" +
+              "请检查：CORS、数据源/数据集名是否正确、attributeFilter 字段是否存在。\n\n" +
+              "原始返回：\n" + JSON.stringify(serviceResult, null, 2)
+            );
+            return;
+          }
+          setStatus("查询成功，返回要素数：" + fc.features.length);
+          if (!map.loaded()) map.once("load", () => addResult(fc));
+          else addResult(fc);
+        });
+    }
+
+    document.getElementById("btnQuery").addEventListener("click", runQuery);
+    document.getElementById("btnClear").addEventListener("click", clearResult);
+
+    map.on("load", function() {
+      setStatus("地图已加载（中国底图，无需 token）。填写参数后点击“查询并上图”。");
+    });
+  </script>
 </body>
 </html>
