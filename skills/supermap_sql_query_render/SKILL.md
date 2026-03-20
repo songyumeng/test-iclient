@@ -17,6 +17,23 @@ user-invocable: true
 - Skill 可以使用 **Node** 写文件到工作区。
 - 你必须通过 Node 脚本生成 `dist/demo.html`。
 
+## ✅ 推荐执行方式（务必遵守）
+> 注意：`dist/demo.html` 是 **生成产物**，不要手改。只修改 `template/demo.html.tpl`，再运行 `generate.js` 重新生成。
+
+- 不带参数（生成可编辑面板；attributeFilter 默认 `1=1`）：
+```bash
+node skills/supermap_sql_query_render/generate.js
+```
+
+- 带参数生成（推荐）：
+```bash
+node skills/supermap_sql_query_render/generate.js \
+  --dataServiceUrl "https://xxx/iserver/services/data-xxx/rest/data" \
+  --datasourceName "World" \
+  --datasetName "Countries" \
+  --attributeFilter "SMID = 247"
+```
+
 ## 输入（来自用户自然语言）
 必需字段：
 - `dataServiceUrl`: iServer REST Data 服务根路径（必须到 `/rest/data`）
@@ -79,7 +96,7 @@ user-invocable: true
    - `__DATASOURCE_NAME__`
    - `__DATASET_NAME__`
    - `__ATTRIBUTE_FILTER__`
-3) 写出到 `dist/demo.html`（确保 dist 目录存在）
+3) 写���到 `dist/demo.html`（确保 dist 目录存在）
 
 你可以把该逻辑放在 `generate.js` 中并执行它。
 
