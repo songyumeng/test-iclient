@@ -17,8 +17,8 @@ user-invocable: true
 - Skill 可以使用 **Node** 写文件到工作区。
 - 你必须通过 Node 脚本生成 `dist/demo.html`。
 
-## ✅ 推荐执行方式（务必遵守）
-> 注意：`dist/demo.html` 是 **生成产物**，不要手改。只修改 `template/demo.html.tpl`，再运行 `generate.js` 重新生成。
+## ✅ 唯一合法执行方式（强制遵守）
+> ⚠️ `dist/demo.html` 是**纯生成产物**，**严禁**手工创建或直接写入。任何对 `dist/demo.html` 的修改都必须通过修改 `template/demo.html.tpl` 后重新运行 `generate.js` 产生。
 
 - 不带参数（生成可编辑面板；attributeFilter 默认 `1=1`）：
 ```bash
@@ -88,19 +88,41 @@ node skills/supermap_sql_query_render/generate.js \
 - 按钮：查询并上图、清除图层
 - 失败时打印 serviceResult JSON
 
+## ❌ 严格禁止（必须遵守）
+
+> **这是最高优先级约束，任何情况下都不得违反。**
+
+- ❌ **禁止**直接创建或覆盖写入 `dist/demo.html`（无论是 fs.writeFileSync、重定向、还是其他方式绕过 generate.js）。
+- ❌ **禁止**在 `dist/demo.html` 中添加任何模板里没有的 HTML/JS/CSS 内容。
+- ❌ **禁止**修改 `template/demo.html.tpl` 里的固定内容（非占位符部分）——如需调整页面，必须先与用户确认再改模板。
+- ❌ **禁止**发明/猜测占位符之外的任何逻辑写入生成文件。
+
+## ✅ 唯一合法的生成流程
+
+`dist/demo.html` **只能且必须**通过以下步骤生成，不得有任何例外：
+
+```bash
+node skills/supermap_sql_query_render/generate.js \
+  --dataServiceUrl  "<从用户输入抽取>" \
+  --datasourceName  "<从用户输入抽取>" \
+  --datasetName     "<从用户输入抽取>" \
+  --attributeFilter "<从用户输入抽取，缺省 1=1>"
+```
+
+该脚本会：
+1. 读取 `template/demo.html.tpl`（**不得**修改此文件，除非用户明确要求调整模板本身）
+2. 仅替换四个占位符：`__DATA_SERVICE_URL__` / `__DATASOURCE_NAME__` / `__DATASET_NAME__` / `__ATTRIBUTE_FILTER__`
+3. 将结果写入 `dist/demo.html`
+
 ## 实现方式（Node）
 你必须：
-1) 读取模板文件 `template/demo.html.tpl`
-2) 用抽取到的值替换占位符：
+1) 运行 `generate.js`（见上方"唯一合法的生成流程"）——**不要**自行读写文件来生成 demo.html。
+2) `generate.js` 内部读取模板文件 `template/demo.html.tpl`，用抽取到的值替换占位符：
    - `__DATA_SERVICE_URL__`
    - `__DATASOURCE_NAME__`
    - `__DATASET_NAME__`
    - `__ATTRIBUTE_FILTER__`
-3) 写���到 `dist/demo.html`（确保 dist 目录存在）
+3) 写入到 `dist/demo.html`（确保 dist 目录存在）。
 
-你可以把该逻辑放在 `generate.js` 中并执行它。
-
-## 交付物（建议一起生成）
-- `dist/demo.html`
-- `skills/supermap_sql_query_render/generate.js`
-- `skills/supermap_sql_query_render/template/demo.html.tpl`
+## 交付物
+- `dist/demo.html`（**必须**由 generate.js 生成，内容与模板完全一致，只有占位符被替换）
