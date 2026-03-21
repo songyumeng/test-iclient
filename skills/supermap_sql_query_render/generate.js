@@ -77,8 +77,9 @@ if (!datasetName) console.warn("[warn] Missing --datasetName (will generate demo
 // ---- generate ----
 const tplPath = path.join(__dirname, "template", "demo.html.tpl");
 const distDir = path.join(__dirname, "dist");
-const outPath = path.join(distDir, "demo.html");
 
+const outPath = path.join(distDir, "demo.html");
+console.log(distDir,outPath)
 fs.mkdirSync(distDir, { recursive: true });
 
 const tpl = fs.readFileSync(tplPath, "utf8");
